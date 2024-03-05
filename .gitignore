@@ -3,3 +3,4 @@ tmp
 *.csv
 /.devcontainer
 /.github/dependabot.yml
+/gbif
