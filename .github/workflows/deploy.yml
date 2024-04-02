@@ -35,4 +35,9 @@ jobs:
         run: |
           echo "Triggering call to deploy to $DEPLOY_ENVIRONMENT environment"
           FUNCTION_NAME="edna-explorer-$DEPLOY_ENVIRONMENT-update"
-          aws lambda invoke --function-name $FUNCTION_NAME response.json
+          echo '{"projectType": "eDNAExplorer"}' > payload.json
+          aws lambda invoke \
+              --function-name $FUNCTION_NAME \
+              --payload '{"body": "{ \"projectType\": \"eDNAExplorer\" }"}' \
+              --cli-binary-format raw-in-base64-out \
+              response.json
