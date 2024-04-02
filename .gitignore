@@ -4,3 +4,5 @@ tmp
 /.devcontainer
 /.github/dependabot.yml
 /gbif
+*.RData
+.Rhistory
