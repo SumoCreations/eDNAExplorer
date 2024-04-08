@@ -193,10 +193,10 @@ tryCatch(
     system(paste("rm ",filename))
 
     # Trigger the next step in the pipeline (generate the GBIF data slice for the project used in the reporting cluster)
-    function_name <- paste("edna-explorer-", app_env, "-slice-gbif", sep="")
+    function_name <- paste("edna-explorer-", app_env, "-report", sep="")
 
     # Prepare the payload as a JSON string
-    payload <- toJSON(list(body = list(reportId = ProjectID)))
+    payload <- toJSON(list(body = list(reportId = ProjectID, reportType = "slice")))
 
     # Construct the AWS CLI command to invoke the Lambda function
     # Note: Make sure to replace 'your_region' with your actual AWS region if necessary
