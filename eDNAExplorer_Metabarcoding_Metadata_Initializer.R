@@ -32,6 +32,7 @@ db_name <- Sys.getenv("db_name")
 db_user <- Sys.getenv("db_user")
 db_pass <- Sys.getenv("db_pass")
 bucket <- Sys.getenv("S3_BUCKET")
+app_env <- Sys.getenv("APP_ENV")
 Database_Driver <- dbDriver("PostgreSQL")
 ENDPOINT_URL <- Sys.getenv("ENDPOINT_URL")
 
@@ -185,11 +186,29 @@ tryCatch(
       dbWriteTable(con,"TronkoMetadata",Metadata,row.names=FALSE,append=TRUE)
     }
     RPostgreSQL::dbDisconnect(con, shutdown=TRUE)
-    #Save log file.
+    # Save log file.
     filename <- paste(gsub(" ","_",date()),"eDNAExplorer_Metabarcoding_Metadata_Initializer.R.log",sep="_")
     system(paste("echo > ",filename,sep=""))
     system(paste("aws s3 cp ",filename," s3://",bucket,"/projects/",ProjectID,"/log/",filename," --endpoint-url ",ENDPOINT_URL,sep=""))
     system(paste("rm ",filename))
+
+    # Trigger the next step in the pipeline (generate the GBIF data slice for the project used in the reporting cluster)
+    function_name <- paste("edna-explorer-", app_env, "-report", sep="")
+
+    # Prepare the payload as a JSON string
+    payload <- toJSON(list(body = list(reportId = ProjectID, reportType = "slice")))
+
+    # Construct the AWS CLI command to invoke the Lambda function
+    # Note: Make sure to replace 'your_region' with your actual AWS region if necessary
+    cmd <- paste("aws lambda invoke",
+                "--function-name", function_name,
+                "--invocation-type RequestResponse",
+                "--payload", shQuote(payload),
+                "/dev/stdout")  # Outputting response to stdout; adapt as needed
+
+    # Execute the command
+    system(cmd)
+    
   },
   error = function(e) {
     process_error(e, filename)
