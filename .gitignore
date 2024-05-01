@@ -3,3 +3,6 @@ tmp
 *.csv
 /.devcontainer
 /.github/dependabot.yml
+/gbif
+*.RData
+.Rhistory

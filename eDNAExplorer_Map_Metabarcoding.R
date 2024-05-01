@@ -25,6 +25,8 @@ tryCatch(
     # Start loading phase.
     updateReport(report_id, "LOADING", con)
 
+    cat("-------------------------------------", "Filtering GBIF occurrences:", taxon_name, taxonomic_rank, "-------------------------------------", sep = "\n")
+
     # Read in GBIF occurrences.
     gbif <- gbif_local()
 
@@ -37,6 +39,7 @@ tryCatch(
       distinct(.keep_all = TRUE)
     tronko_db <- as.data.frame(tronko_filtered)
     tronko_db <- tronko_db[complete.cases(tronko_db), ]
+    gbif_taxon_key <- name_backbone(name = taxon_name, rank = taxonomic_rank)$usageKey
 
     # Start buil1ding phase.
     updateReport(report_id, "BUILDING", con)
@@ -46,11 +49,12 @@ tryCatch(
       filter(
         basisofrecord %in% c("HUMAN_OBSERVATION", "OBSERVATION", "MACHINE_OBSERVATION"),
         coordinateuncertaintyinmeters <= 100 & !is.na(coordinateuncertaintyinmeters),
-        occurrencestatus == "PRESENT", taxonkey == Taxon_GBIF
+        occurrencestatus == "PRESENT", taxonkey == gbif_taxon_key
       ) %>%
       select(decimallongitude, decimallatitude)
     gbif_db <- as.data.frame(gbif_db)
     colnames(gbif_db) <- c("lng", "lat")
+    cat("GBIF occurrences filtered:", nrow(gbif_db), "\n")
 
     # Get unique taxon locations
     if (nrow(gbif_db) < 1) {
@@ -64,20 +68,23 @@ tryCatch(
       taxon_map <- taxon_map[complete.cases(taxon_map), ]
       taxon_map <- taxon_map[!duplicated(taxon_map), ]
     }
+    cat("Unique taxon occurrences:", nrow(taxon_map), "\n")
 
     # Rename latitude and longitude
     names(tronko_db)[names(tronko_db) == "longitude"] <- "lng"
     names(tronko_db)[names(tronko_db) == "latitude"] <- "lat"
+    cat("Unique taxon occurrences after renaming:", nrow(tronko_db), "\n")
 
     # Generate JSON object for export and mapping.
     datasets <- list(datasets = list(eDNA = tronko_db, GBIF = taxon_map))
+    cat("Generated datasets for mapping\n")
 
     # Export file for mapping
-    datasets <- list(datasets = list(results = tronko_db, metadata = sample_db))
     write(toJSON(datasets, auto_unbox = TRUE), filename)
     file_key <- paste("projects/", project_id, "/plots/", filename, sep = "")
     system(paste("aws s3 cp ", filename, " s3://", bucket, "/", file_key, " --endpoint-url ", ENDPOINT_URL, sep = ""), intern = TRUE)
     system(paste("rm ", filename, sep = ""))
+    cat("Exported datasets for mapping to: ", file_key, "\n")
 
     # Update report with file key.
     sql_query <- sprintf(

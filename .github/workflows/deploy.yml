@@ -1,36 +1,43 @@
-name: Build & Test
+name: Deploy
 
 on:
+  workflow_run:
+    workflows: ["Build Image for AWS ECR"]
+    types:
+      - completed
+    branches:
+      - main
+      - develop
   pull_request:
     types: [opened, edited, synchronize, reopened]
     branches: [main, develop]
   push:
     branches: [main, develop]
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
-    env:
-      SSH_ADDRESS: ${{ github.ref == 'refs/heads/main' && secrets.SSH_ADDRESS_PROD || secrets.SSH_ADDRESS }}
-      SSH_USER: ${{ github.ref == 'refs/heads/main' && secrets.SSH_USER_PROD || secrets.SSH_USER }}
-      SSH_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.SSH_PASSWORD_PROD || secrets.SSH_PASSWORD }}
-      SSH_KEY: ${{ github.ref == 'refs/heads/main' && secrets.SSH_KEY_PROD || secrets.SSH_KEY }}
-      DEPLOY_ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'PRODUCTION' || 'STAGING' }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Add SSH key
+      - name: Configure AWS Credentials for Dynamic Region
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          audience: sts.amazonaws.com
+          aws-region: ${{ secrets.AWS_ACCESS_DEFAULT_REGION }}
+          role-to-assume: arn:aws:iam::576661951794:role/GitHubActions-ServerlessDeploy
+      - name: Deploy to EFS
+        env:
+          DEPLOY_ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'prod' || 'staging' }}
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ env.SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 700 ~/.ssh/id_rsa
-      - name: Deploy to server
-        run: |
-          echo "Attempting to deploy to $DEPLOY_ENVIRONMENT environment"
-          echo "Copying files to server located at $SSH_ADDRESS"
-          scp -v -o StrictHostKeyChecking=no -r ./* ${{ env.SSH_USER }}@${{ env.SSH_ADDRESS }}:/home/${{ env.SSH_USER }}/eDNAExplorer
-          echo "Finished deploying to $DEPLOY_ENVIRONMENT environment"
-      - name: Clean up SSH key
-        run: |
-          rm -f ~/.ssh/id_rsa
+          echo "Triggering call to deploy to $DEPLOY_ENVIRONMENT environment"
+          FUNCTION_NAME="edna-explorer-$DEPLOY_ENVIRONMENT-update"
+          echo '{"projectType": "eDNAExplorer"}' > payload.json
+          aws lambda invoke \
+              --function-name $FUNCTION_NAME \
+              --payload '{"body": "{ \"projectType\": \"eDNAExplorer\" }"}' \
+              --cli-binary-format raw-in-base64-out \
+              response.json
