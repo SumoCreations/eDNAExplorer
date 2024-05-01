@@ -89,7 +89,7 @@ ENDPOINT_URL <- Sys.getenv("ENDPOINT_URL")
 
 database_driver <- dbDriver("PostgreSQL")
 sapply(dbListConnections(database_driver), dbDisconnect)
-
+con <- dbConnect(database_driver, host = db_host, port = db_port, dbname = db_name, user = db_user, password = db_pass)
 
 # Write error output to our json file.
 process_error <- function(e, filename = "error.json") {
