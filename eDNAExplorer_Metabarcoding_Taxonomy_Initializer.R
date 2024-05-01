@@ -22,9 +22,6 @@ library(sentryR)
 # Fetch project ID early so we can use it for error output when possible.
 ProjectID <- args[1]
 
-# Establish database credentials.
-readRenviron(".env")
-
 configure_sentry(
   dsn = Sys.getenv("SENTRY_DSN"),
   app_name = "r-report-service", app_version = "1.1.0",
@@ -36,16 +33,62 @@ Sys.setenv(
   "AWS_ACCESS_KEY_ID" = Sys.getenv("AWS_ACCESS_KEY_ID"),
   "AWS_SECRET_ACCESS_KEY" = Sys.getenv("AWS_SECRET_ACCESS_KEY")
 )
-db_host <- Sys.getenv("db_host")
-db_port <- Sys.getenv("db_port")
-db_name <- Sys.getenv("db_name")
-db_user <- Sys.getenv("db_user")
-db_pass <- Sys.getenv("db_pass")
-gbif_dir <- Sys.getenv("GBIF_HOME")
+
+# Define the command and arguments to retrieve the secret
+command <- "aws"
+aws_args <- c(
+  "secretsmanager",
+  "get-secret-value",
+  "--secret-id",
+  "prod/ednaExplorer/postgres",
+  "--query",
+  "SecretString",
+  "--output",
+  "text"
+)
+
+# Execute the command and capture the output
+output <- system2(command, aws_args, stdout = TRUE)
+
+# Parse the JSON output
+parsed_output <- fromJSON(output)
+
+# Extract the parameter value
+conn_str <- parsed_output$DATABASE_URL
+
+# Extract the main part of the connection string without the
+# protocol and parameters
+main_conn_str <- sub("postgresql://(.*?)\\?.*", "\\1", conn_str)
+
+# Split the main part into user:password and the rest
+credentials_rest <- strsplit(main_conn_str, "@")[[1]]
+
+# Extract user and password
+user_pass <- strsplit(credentials_rest[1], ":")[[1]]
+db_user <- user_pass[1]
+db_pass <- user_pass[2]
+
+# Extract host and port
+host_port <- strsplit(credentials_rest[2], ":")[[1]]
+db_host <- host_port[1]
+db_port <- as.numeric(strsplit(host_port[2], "/")[[1]][1])
+
+# Check if db_host is NA
+db_host <- ifelse(is.na(db_port), strsplit(credentials_rest[2], "/")[[1]], db_host)
+
+# Check if db_port is NA, and default to 5432 if it is
+db_port <- ifelse(is.na(db_port), 5432, db_port)
+
+# Extract database name
+db_name <- sub(".*/([^/?]+).*", "\\1", conn_str)
+
 bucket <- Sys.getenv("S3_BUCKET")
-taxonomy_home <- Sys.getenv("taxonomy_home")
-Database_Driver <- dbDriver("PostgreSQL")
+home_dir <- Sys.getenv("home_dir")
 ENDPOINT_URL <- Sys.getenv("ENDPOINT_URL")
+
+database_driver <- dbDriver("PostgreSQL")
+sapply(dbListConnections(database_driver), dbDisconnect)
+con <- dbConnect(database_driver, host = db_host, port = db_port, dbname = db_name, user = db_user, password = db_pass)
 
 # Write error output to our json file.
 process_error <- function(e, filename = "error.json") {
@@ -69,9 +112,6 @@ process_error <- function(e, filename = "error.json") {
   stop(error_message)
 }
 
-# Force close any possible postgreSQL connections.
-sapply(dbListConnections(Database_Driver), dbDisconnect)
-
 tryCatch(
   {
     # Get project ID.
@@ -91,7 +131,6 @@ tryCatch(
 tryCatch(
   {
     # Read in project metadata.
-    con <- dbConnect(Database_Driver, host = db_host, port = db_port, dbname = db_name, user = db_user, password = db_pass)
     Metadata <- tbl(con, "TronkoMetadata")
     Metadata <- Metadata %>% filter(projectid == ProjectID)
     Metadata <- as.data.frame(Metadata)
@@ -100,7 +139,8 @@ tryCatch(
     state_province_list <- na.omit(unique(Metadata$state))
 
     # Read in GBIF occurrences.
-    gbif <- gbif_local()
+    dir <- "/mnt/gbif/occurrence/2024-04-01/occurrence.parquet"
+    gbif <- gbif_local(dir = dir)
 
     # Get local bounds for sample locations, add 0.5 degree buffer.
     Local_East <- max(na.omit(Metadata$longitude)) + 0.5
