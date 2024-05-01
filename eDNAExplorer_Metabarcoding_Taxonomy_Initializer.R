@@ -360,7 +360,7 @@ tryCatch(
 
             # Save Tronko output.
             TronkoOutput_Filename <- paste(Primer, ".csv", sep = "")
-            write.table(x = TronkoProject, file = TronkoOutput_Filename, quote = FALSE, sep = ",", row.names = FALSE)
+            write.table(x = TronkoProject, file = TronkoOutput_Filename, quote = TRUE, sep = ",", row.names = FALSE)
             system(paste("aws s3 cp ", TronkoOutput_Filename, " s3://", bucket, "/tronko_output/", ProjectID, "/", TronkoOutput_Filename, " --endpoint-url ", ENDPOINT_URL, sep = ""))
             system(paste("rm ", TronkoOutput_Filename, sep = ""))
           }
